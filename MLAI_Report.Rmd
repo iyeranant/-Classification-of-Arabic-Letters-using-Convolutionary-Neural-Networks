@@ -1,0 +1,843 @@
+---
+title: "ML AI Project: Convolutionary Neural Networks"
+date: "Automation & IT (Master's program)"
+author: 
+  - "Andrey Domnyshev (11146992)" 
+  - "Anantharaman Iyer (11147113)"
+  - "Larissa Melo (11145746)" 
+  - "Mirco Friedrichs (11094675)" 
+abstract: |
+  The project is dedicated to experiment neural network and CNN methods for classification of arabic letter images and analyze the accuracy of the model, after applying training and test validation.  
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.pos = "!H", out.extra = "")
+```
+
+
+## 1. Introduction
+
+From the idea of simulating the human brain, machine learning methods are constantly evolving to offer similar capabilities to computers. Modelling complex systems to construct real world problems to reproduce techniques like pattern recognition, classification and generalization is the main goal of artificial neural network.
+
+The current project work is dedicated to finding the best model to predict picture's labels of Arabic letters, using the neural network and CNN methods.
+
+
+### 1.1. Neural Network
+
+Neural network is inspired by the human brain, simulating the way that neurons interact to another ones to recognize patterns. The figure below demonstrates the model of a perceptron, which consists of weight, summation processor and an activation function.
+
+<center> ![](neuron_model.jpeg) 
+
+\center __**Figure 1.** Model of an artificial neuron (Source: 4)__ \center
+
+
+### 1.2. CNN
+
+Convolutional Neural Network (CNN) are also made of neurons, learnable weights and biases, like neural network. It is generally used to analyze visual images by processing data with grid-like topology to detect and classify objects in image.
+
+A convolution neural network has multiple hidden layers that help in extracting information from an image. The four important layers in CNN are:
+
+1. Convolution layer: performs the convolution operation where each image is considered as a matrix of pixel values
+2. ReLU layer:  (rectified linear unit) performs an element-wise operation and sets all the negative pixels to 0. It introduces non-linearity to the network, and the generated output is a rectified feature map
+3. Pooling layer: reduces the dimensional of the feature map and uses different filters to identify parts of an image, such as edges, corners, body, feathers, etc.
+4. Fully connected layer: flattening converts the resultant 2-Dimensional arrays from pooled feature maps into a single long continuous linear vector. In the end, it feds a fully connected layer to classify the image.
+
+
+<center>![](CNN_recognizes_a_bird1.png)
+
+\center __**Figure 2.** CNN Method to recognize a bird image (Source: 5)__ \center
+
+
+### 1.3. Data preparation
+
+Loading the important libraries:
+```{r, eval=FALSE}
+
+library(keras)
+library(tensorflow)
+library(png)
+library(stringi)
+library(imager)
+set.seed(1)
+```
+
+For the project we used the data set with pictures of Arabic letters manually written that were available in the repository.There were 28 labeled categories for each image ID as shown in the following image.
+
+![](images_labels.png) 
+
+\center __**Figure 3.** View of data images__ \center
+
+
+
+Setting the paths of the images:
+```{r, eval=FALSE}
+pathtrainimages = "/Train Images 13440x32x32/train/"
+pathtestimages = "/Test Images 3360x32x32/test/"
+```
+
+
+Reading in the filenames of the training images. Sort them by numeric. Read out which number it is and store it sorted in train_labels.
+```{r, eval=FALSE}
+filenamestrain <- list.files(path = pathtrainimages)
+filenamestrain <- stri_sort(filenamestrain, numeric = TRUE)
+
+numbername <- vapply(strsplit(filenamestrain[1], c("_","."), fixed = TRUE), `[`, 4, FUN.VALUE=character(1))
+numbername <- vapply(strsplit(numbername,".", fixed = TRUE), `[`, 1, FUN.VALUE=character(1))
+train_labels <- array_reshape(numbername, c(1, 1))
+
+for (j in 2:13440){
+numbername <- vapply(strsplit(filenamestrain[j], c("_","."), fixed = TRUE), `[`, 4, FUN.VALUE=character(1))
+numbername <- vapply(strsplit(numbername,".", fixed = TRUE), `[`, 1, FUN.VALUE=character(1))
+train_labels <- rbind(train_labels, array_reshape(numbername, c(1, 1)))
+}
+```
+
+
+Reading in all train images from the folder and bind it row wise to train_images.
+```{r, eval=FALSE}
+train_images<- array_reshape(readPNG(paste0(pathtrainimages, filenamestrain[1])), c(1, 32 * 32))
+
+for (j in 2:13440){
+  train_images<- rbind(train_images,array_reshape(readPNG(paste0(pathtrainimages, filenamestrain[j])), c(1, 32 * 32)))
+}
+```
+
+
+Reading in the filenames of the test images. 
+Sort them by numeric. 
+Read out which number it is and store it sorted in test_labels.
+```{r, eval=FALSE}
+filenamestest <- list.files(path = pathtestimages)
+filenamestest <- stri_sort(filenamestest, numeric = TRUE)
+
+numbernametest <- vapply(strsplit(filenamestest[1], c("_","."), fixed = TRUE), `[`, 4, FUN.VALUE=character(1))
+numbernametest <- vapply(strsplit(numbernametest,".", fixed = TRUE), `[`, 1, FUN.VALUE=character(1))
+test_labels <- array_reshape(numbernametest, c(1, 1))
+
+for (j in 2:3360){
+numbernametest <- vapply(strsplit(filenamestest[j], c("_","."), fixed = TRUE), `[`, 4, FUN.VALUE=character(1))
+numbernametest <- vapply(strsplit(numbernametest,".", fixed = TRUE), `[`, 1, FUN.VALUE=character(1))
+test_labels <- rbind(test_labels, array_reshape(numbernametest, c(1, 1)))
+}
+```
+
+
+Reading in all test images from the folder and bind it row wise to test_images.
+```{r, eval=FALSE}
+test_images<- array_reshape(readPNG(paste0(pathtestimages, filenamestest[1])), c(1, 32 * 32))
+
+for (j in 2:3360){
+  test_images<- rbind(test_images,array_reshape(readPNG(paste0(pathtestimages,filenamestest[j])), c(1, 32 * 32)))
+}
+```
+
+
+Preparing a function for reading a binary array and convert it to an image.
+```{r, eval=FALSE}
+#Function to visualize a symbol
+ImageDisplay <- function(data, row_index){
+
+#Obtaining the row as a numeric vector
+r <- as.numeric(data[row_index, 1:1024])
+
+#Creating a empty matrix to use
+im <- matrix(nrow = 32, ncol = 32)
+
+#Filling properly the data into the matrix
+j <- 1
+for(i in 32:1){
+
+  im[,i] <- r[j:(j+31)]
+
+  j <- j+32
+
+}  
+
+#Plotting the image 
+image(x = 1:32, 
+      y = 1:32, 
+      z = im, 
+      col=gray((0:255)/255), 
+      #main = paste("Sign:")
+      )
+
+}
+```
+
+
+Integrity check of the data transformation (to be sure, that our data transformation is correct)
+```{r, eval=FALSE}
+par(mfrow=c(2,2))
+for (i in 1:4){
+  ImageDisplay(test_images,i)
+}
+```
+
+
+The R `str()` function is a convenient way to get a quick glimpse at the structure of an array. Let's use it to have a look at the training data:
+```{r, eval=FALSE}
+str(train_images)
+```
+
+![](strtrainimages.jpg)
+
+```{r, eval=FALSE}
+str(train_labels)
+```
+
+![](strtrainlabels.jpg)
+
+Looking at the test data:
+```{r, eval=FALSE}
+str(test_images)
+```
+
+![](strtestimages.jpg)
+
+```{r, eval=FALSE}
+str(test_labels)
+```
+![](strtrainlabels.jpg)
+
+Encoding the labels to categorical values. In this case, it is important to run the following line just once. If you do experiments with the network, start running with building the network. Otherwise, the labels will need to be reread.
+```{r, eval=FALSE}
+train_labels <- to_categorical(train_labels)
+test_labels <- to_categorical(test_labels)
+```
+
+
+```{r, eval=FALSE}
+train_labels <- train_labels[,-1]
+test_labels <- test_labels[,-1]
+```
+
+
+### 1.3.1 Building and compiling the neural network
+
+Building the network:
+```{r, eval=FALSE}
+network <- keras::k_clear_session()
+network <- keras_model_sequential() %>% 
+  layer_dense(units = 512, activation = "relu", input_shape = c(32 * 32)) %>%
+  layer_dropout(rate = 0.4) %>% 
+  layer_dense(units = 128, activation = 'relu') %>%
+  layer_dropout(rate = 0.3) %>%
+  layer_dense(units = 64, activation = 'relu') %>%
+  layer_dropout(rate = 0.2) %>%
+  layer_dense(units = 28, activation = "softmax")
+```
+
+
+Compiling the network:
+```{r, eval=FALSE}
+network %>% compile(
+  optimizer = "rmsprop",
+  loss = "categorical_crossentropy",
+  metrics = c("accuracy")
+)
+```
+
+### 1.3.2 Training and testing model to obtain the accuracy
+
+Training the network:
+```{r, echo=TRUE, results='hide', eval=FALSE}
+network %>% fit(train_images, train_labels, epochs = 15, batch_size = 128)
+```
+
+
+Checking the accuracy and the quality of the model:
+```{r, eval=FALSE}
+metrics <- network %>% evaluate(test_images, test_labels, verbose = 0)
+metrics
+```
+
+![](metrics.jpg)
+
+### 1.4 Training and testing data for CNN Method
+
+Reading the train images was similar to the neural network steps described in the previous section. However, some modifications were done in order to better adjust the new data input. The main difference is that in the case, an additional dimension was added for image channel.
+
+```{r, eval=FALSE}
+train_images<-array(c(-1), dim=c(13440,32,32))
+for (j in 1:13440){  
+  train_images[j,,]<- array_reshape(readPNG(paste0(pathtrainimages, filenamestrain[j])), c(1, 32, 32))
+}
+# Add additional dimension for image channel
+train_images <- array_reshape(train_images, c(13440, 32, 32, 1))
+```
+
+
+Reading the test images from the folder and bind it row wise to test_images also had an additional dimension.
+
+```{r, eval=FALSE}
+test_images<-array(c(-1), dim=c(3360,32,32))
+for (j in 1:3360){ 
+  test_images[j,,]<- array_reshape(readPNG(paste0(pathtestimages,filenamestest[j])), c(1, 32, 32))
+}
+# Add additional dimension for image channel
+test_images <- array_reshape(test_images, c(3360, 32, 32, 1))
+```
+
+### 1.4.1 Building CNN network and data integrity
+
+Finally, encoding the labels to categorical values and running the code for building the network.
+
+```{r, eval=FALSE}
+train_labels <- to_categorical(train_labels)
+test_labels <- to_categorical(test_labels)
+```
+
+All previous steps have been done and saved into workplace file. This file can be directly opened through the "Load" function.
+
+```{r, eval=FALSE}
+load("workspaces/convolution0308.RData")
+train_labels<-train_labels[,-1]
+test_labels<-test_labels[,-1]
+```
+
+Integrity check of data transformation (to be sure, that out data transformation is correct)
+
+```{r, eval=FALSE}
+rotate <- function(x) t(apply(x, 2, rev))
+par(mfrow=c(2,2))
+for (i in 1:4){
+  image(rotate(test_images[i,,,]))
+}
+```
+
+Set parameters for TensorBoard
+
+```{r, eval=FALSE}
+# Get Data:
+if(dir.exists("arabic.d")){
+	unlink("arabic.d", recursive = TRUE)
+}
+dir.create("arabic.d")
+```
+
+![](image_CNN.png)
+
+
+In contrast on previous example, the backbone for the neural network is convolution layer. 
+
+The dense layers used in previous example learn global patterns in their input feature space - all pixels' values; convolution layers learn local patterns, which are found in small 2 dimensions "window" of the input picture. 
+
+* **input_shape:** CNN (Convolutionary Neural Network) takes as input tensors of shape ($image.height$, $image.width$, $image.channels$). We configure the CNN to process inputs of size (32, 32, 1) by passing the argument $input.shape = c(32, 32, 1)$ to the first layer. For our task we have black-and-white pictures, so the number of channels is 1.
+
+![](data.png)
+\center __**Figure 4.** Data Structure for CNN__ \center
+
+&nbsp;
+
+* **filters:** is the the depth of the output feature map. CNN takes as input tensors of shape (h, w, c) and generates as output an activation map of dimension (h', w', c'). The number of output channels $c' = c * filters$.  
+
+* **kernel_size** is the size of patches extracted from the inputs. Lecture notes [1] refers to normal size of (3,3) or (5,5).
+
+* **activation** is a function that is used for data transformation on layer. A relu (rectified linear unit) is a function meant to zero out negative values and used for data transformation on each layer: $output = relu(dot(W, input) + b)$. W and b are tensors that are attributes or weights or trainable parameters of the layer.
+
+```{r, eval=FALSE}
+network2 <- keras::k_clear_session()
+
+network2 <- keras_model_sequential() %>% 
+  layer_conv_2d(filters = 16, kernel_size = c(3, 3), activation = "relu",
+                input_shape = c(32, 32, 1))
+```
+
+After the convolution layer, a pooling layer was implemented to reduce the size of the feature maps. This type of the layer was used due to two main reason [1]:
+
+* We want to facilitate task for the next convolution layer, that should learn high-level patterns (consider the picture "more globally"). The problem is the $kernel size$ of convolution layer is normally (3,3) or (5,5) that could not be enough. 
+
+* We want to reduce the number of trained parameters and avoid the overfitting.
+
+We assign $pool.size = c(2, 2)$, that means that the size of the feature maps will be halved. 
+
+```{r, eval=FALSE}
+network2 <- network2 %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2))
+```
+
+Add 3 more layers with the same parameters. We discussed on the lecture that the number of filters should increase from input to output layers.
+
+```{r, eval=FALSE}
+network2 <- network2 %>% 
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu") %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = "relu")
+```
+
+We need to add the classifier network part at the top of last convolution layer. Flatten layer is responsible for converting the 3 dimensional output tensor from last convolution layer to 1 dimensional  input tensor for first dense layer.
+
+The number of units for the last layer must be equal to the number of categories in our classification task $units = 28$. The last layer activation function is *softmax*, so the network will output a probability distribution over 28 different output classes.
+
+```{r, eval=FALSE}
+network2 <- network2 %>% 
+  layer_flatten() %>% 
+  layer_dense(units = 128, activation = "relu") %>% 
+  layer_dense(units = 28, activation = "softmax")
+
+summary(network2)
+```
+
+![](summary_network.png)
+
+
+### 1.4.2 Compiling the network
+
+* **Optimizer** determines how the network will be updated based on the loss function. We have chosen *RMSprop* optimization algorithm, as recommended in lectures [1]. It is one of the most popular algorithm used for neural networks. The good explanation about how *RMSprop* works is given in [2].
+
+* **Loss function** is the function that represents a measure of success for the task and its value is the subject for optimization during training. We use *"categorical_crossentropy"* loss function, which represents how close the predicted probability of each entry of data to be classified into exact class to the corresponding true value (0 or 1). The more the predicted probability diverges from the actual value, the higher is the log-loss value.
+
+* **Metrics** determines parameters to be evaluated by the model during training and testing. [3] We specify only *accuracy* - the fraction of the images that were correctly classified. 
+
+```{r, eval=FALSE}
+network2 %>% compile(
+  optimizer = "rmsprop",
+  loss = "categorical_crossentropy",
+  metrics = c("accuracy")
+)
+```
+
+Prepare TensorBoard
+
+```{r, eval=FALSE}
+localDir <- "log_network2.d"
+if(dir.exists(localDir)){
+	unlink(localDir, recursive = TRUE)
+}
+dir.create(localDir)
+
+callbacks <- list(
+  callback_tensorboard(
+    log_dir = localDir,
+       histogram_freq = 1
+) )
+```
+
+
+### 1.4.3 Training the network
+
+* **number of epochs** is the number of iterations over all samples in training set in mini-batches of *batch_size* samples.
+
+* **batch size** is number of data samples per gradient update. Deep-learning models do not process an entire data set at once but instead they break the data into batches. [1]
+
+* **callbacks** is used for attach the result to TensorBoard application. 
+
+There are 13.440 entities of training data. With $batch.size = 128$ the network will perform $13 440/128=105$ gradient updates per epoch. For the $epochs = 50$ the overall number of performed gradient updates is 5250.
+
+```{r, echo=TRUE, results='hide', eval=FALSE}
+history_network2<-network2 %>% fit(train_images, train_labels, epochs = 50, batch_size = 128, callbacks = callbacks)
+```
+
+```{r, eval=FALSE}
+plot(history_network2)
+```
+
+![](history_network.png)
+
+
+
+## 2. Materials and Methods
+
+### 2.1. Project restrictions specification
+
+The task of tuning hyperparameters of the optimization algorithm could include a lot of experiments and investigation, but we were proposed to work inside some restrictions.
+
+* We use only data set, objective function, optimization algorithm, and tuning algorithm as specified in the introduction.
+* We are allowed to use the full data set or its sample. We can specify the way of data sampling, but for all experiments, we kept a 60% - 40% split:
+
+```{r eval=FALSE}
+rsmpl <- makeResampleDesc("Holdout", split=0.6)
+```
+
+
+### 2.2. Experiments organisation
+
+All our trials history can be divided into 3 phases:
+
+* **Initial experiments.** We tried to understand which settings parameters affect the value of the objective function 
+
+* **Finding the best network parameters.** The hyperparameters' bounds are the targets of experiments. We used recommendations from project description [3] as a guideline and we used examples from literature about `XGBoost` tuning as a starting point. The general approach can be described as follow: *The hyperparameter value that leads to better results of objective function should not lie down on the bounds, but somewhere in the middle. The range of bounds should be as smaller as possible.*
+
+* **Check accuracy of the result.** During the previous steps we noticed how huge impact to the result of objective function create seed or input data changing. In this step, we estimate not only the single result value of the objective function but also which dispersion it has. We introduced the loop inside the given project code to be able to provide several experiments with different values of $set.seed$, $seedFun$ and $seedSPOT$ parameters:
+
+* **Improve the speed of search with specific transformation.** In case of limited time budget, the improvement of `SPOT` searching speed improves the result of the objective function. We implemented transformation *trans_2pow* for the not integer hyperparameters, which are distributed near zero. With the usage of power transformation of hyperparameters, `SPOT` spends less attention for funding optimum in the high ranges of hyperparameters.    
+
+
+## 3. Results
+
+### 3.1. Results of experiments with neural network
+
+In the current section, we present the result of the investigation of how accurate the model is after comparing training and testing files.
+
+As a part of the task, it was  varied the parameters as follows.
+
+*Table 1. Results for different epochs*
+
+| Experiment No | epochs | number of layers | number of units | loss function | activation | loss (test data) | accuracy (test data) |
+|-------------|-----------------|----------------------------|----------------------------------|-----------|-----------|
+| 1 | 50  | 4 | [512,128,64,28] | "categorical_crossentropy" | ["relu","relu","relu","softmax"] | 0.9372023 | 0.8110119 |
+| 2 | 30  | 4 | [512,128,64,28] | "categorical_crossentropy" | ["relu","relu","relu","softmax"] | 0.7285568 | 0.7994047 |
+| 3 | 20  | 4 | [512,128,64,28] | "categorical_crossentropy" | ["relu","relu","relu","softmax"] | 0.5990687 | 0.8071429 |
+| 4 | 10  | 4 | [512,128,64,28] | "categorical_crossentropy" | ["relu","relu","relu","softmax"] | 0.6094053 | 0.7904000 |
+
+Varying the number of hidden layers was also tried in order to visualize new behaviors, as shown in the following table:
+
+*Table 2. Results for different hidden layers*
+
+| Experiment No | epochs | number of layers | number of units | loss function | activation | loss (test data) | accuracy (test data) |
+|---------------|--------|------------------|-----------------|---------------|------------|------|----------|
+| 5 | 60 | 2 | [512,29] | "categorical_crossentropy" | ["relu","softmax"] | 0.9414976 | 0.8476190 |
+| 6 | 60 | 3 |[512,128,29] | "categorical_crossentropy" | ["relu","relu","softmax"] | 0.9715653 | 0.7982143 | 0.8493600 |
+
+
+### 3.2. Results of experiments with CNN Method
+
+In this section, it will present the result of the investigation of how accurate the CNN network model is.
+
+### 3.2.1. Estimating CNN performance in test data
+
+The accuracy and the quality of the model can be checked by using "evaluate" function.
+```{r, eval=FALSE}
+metrics <- network2 %>% evaluate(test_images, test_labels, verbose = 0)
+metrics
+```
+
+
+### 3.2.2. Explore the model with TensorBoard
+
+The model was also tested using TensorBoard tool. It is a suite of visualization tools that turns it easier to understand, debug and optimize TensorFlow programs.
+
+Call TensorBoard
+```{r, echo=TRUE, results='hide', eval=FALSE}
+tensorboard(localDir)
+```
+![](Tensorboard.png)
+
+### Visualizing the data representation in layers
+
+The code is taken from lecture notes [1].
+Extract first entity (tensor) form train data
+
+```{r, eval=FALSE}
+img_tensor<-train_images[1,,,]
+img_tensor<-array_reshape(img_tensor, c(1,32,32,1))
+dim(img_tensor)
+```
+Visualize extracted tensor
+
+```{r, eval=FALSE}
+plot(as.raster(img_tensor[1, , , ]))
+```
+![](data2.png)
+
+Extract model (we copy the whole model)
+
+```{r, eval=FALSE}
+# Extracts the outputs of the top 8 layers:
+layer_outputs <- lapply(network2$layers[1:8], function(layer) layer$output)
+# Creates a model that will return these outputs, given the model input:
+activation_model <- keras_model(inputs = network2$input, outputs = layer_outputs)
+summary(activation_model)
+```
+![](data3.png)
+
+Returns a list of five arrays: one array per layer activation
+
+```{r, eval=FALSE}
+activations <- activation_model %>% predict(img_tensor)
+```
+
+Create a function for plotting image with applied filter
+
+```{r, eval=FALSE}
+plot_channel <- function(channel) {
+  rotate <- function(x) t(apply(x, 2, rev))
+  image(rotate(channel), axes = FALSE, asp = 1, col = terrain.colors(12))
+}
+```
+
+Display filter transformation within first layer
+
+```{r, eval=FALSE}
+first_layer_activation <- activations[[1]]
+par(mfrow=c(2,4))
+for (j in seq(1,8,1)){
+  plot_channel(first_layer_activation[1, , , j])
+}
+```
+![](data4.png)
+
+
+```{r, eval=FALSE}
+first_layer_activation <- activations[[1]]
+par(mfrow=c(2,4))
+for (j in seq(9,16,1)){
+  plot_channel(first_layer_activation[1, , , j])
+}
+```
+![](data5.png)
+
+
+Display third filter for each layer
+
+```{r, eval=FALSE}
+par(mfrow=c(2,3))
+for (j in seq(1,5,1)){
+  first_layer_activation <- activations[[j]]
+  plot_channel(first_layer_activation[1, , , 3])
+}
+```
+![](data6.png)
+
+
+```{r, eval=FALSE}
+summary(activation_model)
+```
+![](data7.png)
+
+### 3.2.3. Experiment with different number of epochs
+
+Data preparation steps have been done and saved into workplace file. This file can be directly opened.
+
+```{r, eval=FALSE}
+load("workspaces/convolution0308.RData")
+train_labels<-train_labels[,-1]
+test_labels<-test_labels[,-1]
+```
+
+Consider model performance on test data for different epochs
+
+```{r, eval=FALSE}
+epochs_values<-seq(1,50,1)
+
+
+loss_array<-NULL
+accuracy_array<-NULL
+j<-0
+for (i in epochs_values){
+  j<-j+1
+  loss_array[j]<-NULL
+  accuracy_array[j]<-NULL
+}
+
+j<-0
+for (i in epochs_values){
+  j<-j+1
+  
+  network2 <- keras::k_clear_session()
+  network2 <- keras_model_sequential() %>% 
+  layer_conv_2d(filters = 16, kernel_size = c(3, 3), activation = "relu",
+                input_shape = c(32, 32, 1)) %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu") %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = "relu") %>% 
+  layer_flatten() %>% 
+  layer_dense(units = 128, activation = "relu") %>% 
+  layer_dense(units = 28, activation = "softmax")
+  
+  network2 %>% compile(
+  optimizer = "rmsprop",
+  loss = "categorical_crossentropy",
+  metrics = c("accuracy")
+)
+  
+  network2 %>% fit(train_images, train_labels, epochs = i, batch_size = 128)
+  metrics <- network2 %>% evaluate(test_images, test_labels, verbose = 0)
+  loss_array[j]<-metrics[1]
+  accuracy_array[j]<-metrics[2]
+} 
+
+save(loss_array,file='/results/2607 loss_array different epochs.Rdata')
+save(accuracy_array,file='/results/2607 accuracy_array different epochs.Rdata')
+save(epochs_values,file='/results/2607 epochs_values different epochs.Rdata')
+```
+
+Plot graphs
+
+![](epochs loss.jpeg)
+
+![](epochs accuracy.jpeg)
+
+### 3.2.4. Experiment with different batch sizes
+
+
+Consider model performance on test data for different batch_size
+
+```{r, eval=FALSE}
+batch_size_values<-seq(10,200,5)
+
+
+loss_array<-NULL
+accuracy_array<-NULL
+j<-0
+for (i in batch_size_values){
+  j<-j+1
+  loss_array[j]<-NULL
+  accuracy_array[j]<-NULL
+}
+
+j<-0
+for (i in batch_size_values){
+  j<-j+1
+  
+  network2 <- keras::k_clear_session()
+  network2 <- keras_model_sequential() %>% 
+  layer_conv_2d(filters = 16, kernel_size = c(3, 3), activation = "relu",
+                input_shape = c(32, 32, 1)) %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu") %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = "relu") %>% 
+  layer_flatten() %>% 
+  layer_dense(units = 128, activation = "relu") %>% 
+  layer_dense(units = 28, activation = "softmax")
+  
+  network2 %>% compile(
+  optimizer = "rmsprop",
+  loss = "categorical_crossentropy",
+  metrics = c("accuracy")
+)
+  
+  network2 %>% fit(train_images, train_labels, epochs = 15, batch_size = i)
+  metrics <- network2 %>% evaluate(test_images, test_labels, verbose = 0)
+  loss_array[j]<-metrics[1]
+  accuracy_array[j]<-metrics[2]
+} 
+
+save(loss_array,file='2607 loss_array different batch_size.Rdata')
+save(accuracy_array,file='2607 accuracy_array different batch_size.Rdata')
+save(batch_size_values,file='2607 batch_size_values different batch_size_values.Rdata')
+```
+
+Plot graphs 
+
+![](batch loss.jpeg)
+
+![](batch accuracy.jpeg)
+
+### 3.2.5. Dropout Layer
+
+Building the network:
+
+```{r, eval=FALSE}
+
+network2 <- keras::k_clear_session()
+
+network2 <- keras_model_sequential() %>% 
+  layer_conv_2d(filters = 16, kernel_size = c(3, 3), activation = "relu", # 3,3 may be 5,5
+                input_shape = c(32, 32, 1)) %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu") %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = "relu") %>% 
+  layer_flatten() %>% 
+  layer_dropout(rate = 0.5) %>% 
+  layer_dense(units = 128, activation = "relu") %>% 
+  layer_dense(units = 28, activation = "softmax")
+
+summary(network2)
+```
+![](data8.png)
+
+Compiling the network:
+
+```{r, eval=FALSE}
+network2 %>% compile(
+  optimizer = "rmsprop",
+  loss = "categorical_crossentropy",
+  metrics = c("accuracy")
+)
+```
+
+Training the network:
+
+```{r, echo=TRUE, results='hide', eval=FALSE}
+history_network2<-network2 %>% fit(train_images, train_labels, epochs = 50, batch_size = 128)
+```
+
+
+```{r, eval=FALSE}
+plot(history_network2)
+```
+![](data9.png)
+
+Checking the accuracy and the quality of the model:
+
+```{r, eval=FALSE}
+metrics <- network2 %>% evaluate(test_images, test_labels, verbose = 0)
+metrics
+```
+![](data91.png)
+
+### 3.2.6. Gradient descent optimization algorithms
+
+Gradient descent is one of the most popular algorithms to perform optimization and by far the most common way to optimize neural networks.
+
+* **Adaptive Moment Estimation (Adam)**:  computes adaptive learning rates for each parameter. In addition to storing an exponentially decaying average of past squared gradients, it also keeps an exponentially decaying average of past gradients.
+* **AdaMax**: It is a variant of Adam based on the infinity norm. 
+* **Nesterov-accelerated Adaptive Moment Estimation (Nadam)**: It combines Adam and NAG (Nesterov accelerated gradient)  resulting in better performance of the optimization algorithm
+* **Stochastic gradient descent (SGD)**: It has areas where the surface curves much more steeply in one dimension than in another, which are common around local optima. In these scenarios, SGD oscillates across the slopes of the ravine while only making hesitant progress along the bottom towards the local optimum
+* **Root Mean Square Propagation (rmsp)**: It solves problems that gradients may vary widely in magnitude, trying to find a single global learning rate for the algorithm.
+
+![](contours_evaluation_optimizers.gif)
+
+![](model01.png)
+
+*Table 3. Results for different optimizers*
+
+| #Experiment | optimizer | loss type | loss without dropout (test data) | accuracy without dropout (test data) | loss with dropout (test data) | accuracy with dropout (test data) |
+|-------------|-----------|-----------|-----------|-----------|-----------|-----------|
+| 1 | "Adam" | "categorical_crossentropy" | 0.4237725 | **0.9279762**  | 0.2027411  | 0.9464286 | 
+| 2 | "AdaMax" | "categorical_crossentropy" | 0.4672262 | 0.9163690  | 0.2134206 | 0.9336309 | 
+| 3 | "Nadam" | "categorical_crossentropy" | 0.4484598 | 0.9235119  | 0.1993585 | **0.9502976** | 
+| 4 | "SGD" | "categorical_crossentropy" | 0.5186437  | 0.8395833  | 0.5384331 | 0.8273810 |
+| 5 | "rmsprop" | "categorical_crossentropy" | 0.7390551 | 0.9038690  | 0.1985095 | 0.9488095 |
+|-------------|-----------|-----------|-----------|-----------|-----------|-----------|
+
+
+## 4. Discussion
+
+### 4.1. Epochs
+
+The experiments discussed in section "3.1. Results of experiments with neural network"  show that increasing of epochs can impact on the accuracy and loss positively.
+In order to understand more about this parameter we also tried to overfit the model so that we get a clear picture about what effect does the model have on the parameters. In that case we also trained for more epochs till  a certain level, as a result of which the model overfits. 
+Also some of the layers were added and removed in order to see its effect as seen in section 3.1 .
+
+
+### 4.2. CNN Optimizers
+
+Although it was a classification problem, experiments with binary_crossentropy loss type was also executed. A sigmoid activation in the last layer dense was utilized and the model provided good results, as shown in table 4. However, it is not a proper strategy for the problem type and it shows the importance of really understand the data type and which classification is needed.
+
+*Table 4. Experiment for different optimizer considering binary loss type*
+
+| #Experiment | optimizer | loss type | loss without dropout (test data) | accuracy without dropout (test data) | loss with dropout (test data) | accuracy with dropout (test data) |
+|-------------|-----------|-----------|-----------|-----------|-----------|-----------|
+| 6 | "Adam" | "binary_crossentropy" | 0.03404418 | 0.93720239 | 0.01321956 | 0.94494045 | 
+| 7 | "AdaMax" | "binary_crossentropy" | 0.03054913  | 0.92083335 | 0.01751318 | 0.92708331 | 
+| 8 | "Nadam" | "binary_crossentropy" | 0.03756161   | 0.93571430 | 0.01179029 | **0.95327383** | 
+| 9 | "SGD" | "binary_crossentropy" | 0.1396096  | 0.2133929  | 0.14913353   | 0.06815476 |
+| 10 | "rmsprop" | "binary_crossentropy" | 0.0380838 | **0.9416667**  | 0.01186722  | 0.95059526 |
+
+
+## 5. Conclusion
+
+Our task is to find models with better accuracies for both neural network and CNN methods. In this paper, it was described the data preparation, the network building and the model training/validation procedures. After analyzing the results, it was possible to identify parameters that has positively influenced the model's accuracy described in the result section.
+
+
+## 6. Bibliography
+
+[1] Thomas Bartz-Beielstein. Internal Lecture Notes. Chapter 4 "Deep Learning"
+
+[2] https://towardsdatascience.com/understanding-rmsprop-faster-neural-network-learning-62e116fcf29a 
+
+[3] Documentation for package ‘keras’ version 2.4.0
+
+[4] Harsh Pokharna. The Introduction to Neural Networks we all need! (Part 1). https://medium.com/technologymadeeasy/for-dummies-the-introduction-to-neural-networks-we-all-need-c50f6012d5eb
+
+[5] https://www.simplilearn.com/tutorials/deep-learning-tutorial/convolutional-neural-network
+
